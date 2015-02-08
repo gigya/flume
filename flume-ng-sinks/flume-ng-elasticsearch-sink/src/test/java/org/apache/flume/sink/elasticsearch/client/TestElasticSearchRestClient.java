@@ -18,8 +18,10 @@
  */
 package org.apache.flume.sink.elasticsearch.client;
 
+import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.EventDeliveryException;
+import org.apache.flume.sink.elasticsearch.DocumentIdBuilder;
 import org.apache.flume.sink.elasticsearch.ElasticSearchEventSerializer;
 import org.apache.flume.sink.elasticsearch.IndexNameBuilder;
 import org.elasticsearch.common.bytes.BytesReference;
@@ -30,9 +32,12 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static junit.framework.Assert.assertEquals;
+
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpStatus;
@@ -42,11 +47,16 @@ import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpUriRequest;
 import org.apache.http.util.EntityUtils;
 import org.elasticsearch.common.bytes.BytesArray;
+
+import static org.mockito.Matchers.any;
+import static org.mockito.Matchers.isA;
 import static org.mockito.Mockito.*;
 import static org.mockito.MockitoAnnotations.initMocks;
 
 public class TestElasticSearchRestClient {
 
+  abstract class MockSerWithId implements ElasticSearchEventSerializer, DocumentIdBuilder {}
+  
   private ElasticSearchRestClient fixture;
 
   @Mock
@@ -54,6 +64,9 @@ public class TestElasticSearchRestClient {
 
   @Mock
   private IndexNameBuilder nameBuilder;
+  
+  @Mock
+  private MockSerWithId serWithID;
   
   @Mock
   private Event event;
@@ -72,6 +85,7 @@ public class TestElasticSearchRestClient {
 
   private static final String INDEX_NAME = "foo_index";
   private static final String MESSAGE_CONTENT = "{\"body\":\"test\"}";
+  private static final String DOC_ID = "1234";
   private static final String[] HOSTS = {"host1", "host2"};
 
   @Before
@@ -84,6 +98,8 @@ public class TestElasticSearchRestClient {
     when(bytesReference.toBytesArray()).thenReturn(new BytesArray(MESSAGE_CONTENT));
     when(bytesStream.bytes()).thenReturn(bytesReference);
     when(serializer.getContentBuilder(any(Event.class))).thenReturn(bytesStream);
+    when(serWithID.getContentBuilder(any(Event.class))).thenReturn(bytesStream);
+    when(serWithID.getDocumentId(any(BytesReference.class))).thenReturn(DOC_ID);
     fixture = new ElasticSearchRestClient(HOSTS, serializer, httpClient);
   }
 
@@ -155,4 +171,26 @@ public class TestElasticSearchRestClient {
     assertEquals("http://host1/_bulk", allValues.get(0).getURI().toString());
     assertEquals("http://host2/_bulk", allValues.get(1).getURI().toString());
   }
+  
+  @Test
+  public void shouldAddDocumentIdToRequest() throws Exception {
+	  	ElasticSearchRestClient fixture2 = new ElasticSearchRestClient(HOSTS, serWithID, httpClient);
+		ArgumentCaptor<HttpPost> argument = ArgumentCaptor.forClass(HttpPost.class);
+
+	    when(httpStatus.getStatusCode()).thenReturn(HttpStatus.SC_OK);
+	    when(httpResponse.getStatusLine()).thenReturn(httpStatus);
+	    when(httpClient.execute(any(HttpUriRequest.class))).thenReturn(httpResponse);
+	    
+	    fixture2.addEvent(event, nameBuilder, "bar_type", -1);
+	    fixture2.execute();
+
+	    verify(httpClient).execute(isA(HttpUriRequest.class));
+	    verify(httpClient).execute(argument.capture());
+
+	    assertEquals("http://host1/_bulk", argument.getValue().getURI().toString());
+	    assertEquals("{\"index\":{\"_type\":\"bar_type\",\"_id\":\""+ DOC_ID +"\",\"_index\":\"foo_index\"}}\n" + MESSAGE_CONTENT + "\n",
+	            EntityUtils.toString(argument.getValue().getEntity()));
+  }
+  
+
 }

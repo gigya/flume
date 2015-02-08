@@ -20,9 +20,11 @@ package org.apache.flume.sink.elasticsearch.client;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.gson.Gson;
+
 import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.EventDeliveryException;
+import org.apache.flume.sink.elasticsearch.DocumentIdBuilder;
 import org.apache.flume.sink.elasticsearch.ElasticSearchEventSerializer;
 import org.apache.flume.sink.elasticsearch.IndexNameBuilder;
 import org.slf4j.Logger;
@@ -31,6 +33,7 @@ import org.slf4j.LoggerFactory;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpStatus;
 import org.apache.http.client.HttpClient;
@@ -51,11 +54,13 @@ public class  ElasticSearchRestClient implements ElasticSearchClient {
   private static final String INDEX_PARAM = "_index";
   private static final String TYPE_PARAM = "_type";
   private static final String TTL_PARAM = "_ttl";
+  private static final String DOC_ID_PARAM = "_id";
   private static final String BULK_ENDPOINT = "_bulk";
 
   private static final Logger logger = LoggerFactory.getLogger(ElasticSearchRestClient.class);
 
   private final ElasticSearchEventSerializer serializer;
+  private final DocumentIdBuilder docIdBuilder;
   private final RoundRobinList<String> serversList;
   
   private StringBuilder bulkBuilder;
@@ -70,7 +75,11 @@ public class  ElasticSearchRestClient implements ElasticSearchClient {
       }
     }
     this.serializer = serializer;
-
+    if (null != serializer && serializer instanceof DocumentIdBuilder){
+    	docIdBuilder = (DocumentIdBuilder)serializer;
+    }
+    else
+    	docIdBuilder = null;
     serversList = new RoundRobinList<String>(Arrays.asList(hostNames));
     httpClient = new DefaultHttpClient();
     bulkBuilder = new StringBuilder();
@@ -102,7 +111,9 @@ public class  ElasticSearchRestClient implements ElasticSearchClient {
       indexParameters.put(TTL_PARAM, Long.toString(ttlMs));
     }
     parameters.put(INDEX_OPERATION_NAME, indexParameters);
-
+    if (null != docIdBuilder){
+    	indexParameters.put(DOC_ID_PARAM, docIdBuilder.getDocumentId(content));
+    }
     Gson gson = new Gson();
     synchronized(bulkBuilder) {
       bulkBuilder.append(gson.toJson(parameters));
