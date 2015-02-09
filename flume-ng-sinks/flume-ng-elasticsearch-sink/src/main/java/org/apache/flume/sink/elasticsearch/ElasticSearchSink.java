@@ -61,8 +61,6 @@ import static org.apache.flume.sink.elasticsearch.ElasticSearchSinkConstants.DEF
 import static org.apache.flume.sink.elasticsearch.ElasticSearchSinkConstants.INDEX_NAME_BUILDER;
 import static org.apache.flume.sink.elasticsearch.ElasticSearchSinkConstants.INDEX_NAME_BUILDER_PREFIX;
 
-import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
-
 /**
  * A sink which reads events from a channel and writes them to ElasticSearch
  * based on the work done by https://github.com/Aconex/elasticflume.git.</p>
