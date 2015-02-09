@@ -35,7 +35,14 @@ import org.apache.flume.event.SimpleEvent;
 import org.elasticsearch.action.index.IndexRequestBuilder;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.common.io.BytesStream;
-import org.elasticsearch.common.io.FastByteArrayOutputStream;
+import org.elasticsearch.common.io.stream.BytesStreamOutput;
+import org.elasticsearch.common.settings.ImmutableSettings;
+import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.gateway.Gateway;
+import org.elasticsearch.node.Node;
+import org.elasticsearch.node.NodeBuilder;
+import org.elasticsearch.node.internal.InternalNode;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -44,23 +51,47 @@ import com.google.common.collect.Maps;
 public class TestElasticSearchIndexRequestBuilderFactory
     extends AbstractElasticSearchSinkTest {
 
-  private static final Client FAKE_CLIENT = null;
+  private static Node node;
+  private static Client fake_client;
 
   private EventSerializerIndexRequestBuilderFactory factory;
 
   private FakeEventSerializer serializer;
 
+  void createNodes() throws Exception {
+		Settings settings = ImmutableSettings.settingsBuilder().put("number_of_shards", 1).put("number_of_replicas", 0)
+				.put("routing.hash.type", "simple").put("gateway.type", "none").put("path.data", "target/es-test")
+				.build();
+
+		node = NodeBuilder.nodeBuilder().settings(settings).local(true).node();
+		fake_client = node.client();
+
+		fake_client.admin().cluster().prepareHealth().setWaitForGreenStatus().execute().actionGet();
+	}
+
+	void shutdownNodes() throws Exception {
+		((InternalNode) node).injector().getInstance(Gateway.class).reset();
+		fake_client.close();
+		node.close();
+	}
+	
   @Before
   public void setupFactory() throws Exception {
     serializer = new FakeEventSerializer();
+    createNodes();
     factory = new EventSerializerIndexRequestBuilderFactory(serializer) {
       @Override
       IndexRequestBuilder prepareIndex(Client client) {
-        return new IndexRequestBuilder(FAKE_CLIENT);
+        return new IndexRequestBuilder(fake_client);
       }
     };
   }
-
+  
+  @After
+	public void tearDown() throws Exception {
+		shutdownNodes();
+	}
+  
   @Test
   public void shouldUseUtcAsBasisForDateFormat() {
     assertEquals("Coordinated Universal Time",
@@ -131,7 +162,7 @@ public class TestElasticSearchIndexRequestBuilderFactory
     Event event = new SimpleEvent();
 
     IndexRequestBuilder indexRequestBuilder = factory.createIndexRequest(
-        FAKE_CLIENT, indexPrefix, indexType, event);
+        fake_client, indexPrefix, indexType, event);
 
     assertEquals(indexPrefix + '-'
         + ElasticSearchIndexRequestBuilderFactory.df.format(FIXED_TIME_MILLIS),
@@ -175,7 +206,7 @@ public class TestElasticSearchIndexRequestBuilderFactory
 
     @Override
     public BytesStream getContentBuilder(Event event) throws IOException {
-      FastByteArrayOutputStream fbaos = new FastByteArrayOutputStream(4);
+    	BytesStreamOutput  fbaos = new BytesStreamOutput(4);
       fbaos.write(FAKE_BYTES);
       return fbaos;
     }
